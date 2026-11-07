@@ -1,0 +1,13 @@
+services:
+  componentwatch:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      MODE: ${MODE:-demo}
+      SCAN_INTERVAL_MS: ${SCAN_INTERVAL_MS:-5000}
+    volumes:
+      - componentwatch-data:/app/data
+    restart: unless-stopped
+volumes:
+  componentwatch-data:

@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import http from 'node:http';
+import { createApp } from '../src/server.js';
+import { Store } from '../src/store.js';
+import { Collector } from '../src/collector.js';
+test('HTTP serves dashboard and supports persistent watches while validating input',async t=>{
+  const store=new Store();store.ingest([{id:'1',title:'Test RAM',price:10000,category:'RAM',available:true}]);
+  const collector=new Collector(store);const server=createApp({store,collector,mode:'demo'});server.listen(0,'127.0.0.1');await once(server,'listening');
+  t.after(async()=>{await new Promise(r=>server.close(r));store.close();});const base=`http://127.0.0.1:${server.address().port}`;
+  const response=await fetch(base);assert.equal(response.status,200);assert.match(await response.text(),/The component radar/);
+  const post=(path,body,headers={})=>fetch(base+path,{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)});
+  assert.equal((await post('/api/watch',{id:'1',watched:true,target:9000})).status,200);
+  const state=await (await fetch(base+'/api/state')).json();assert.equal(state.products[0].target,9000);
+  assert.equal((await post('/api/watch',{id:'1',watched:true,target:1.2})).status,400);
+  assert.equal((await post('/api/watch',null)).status,400);
+  assert.equal((await post('/api/watch',{id:'missing',watched:true})).status,404);
+  assert.equal((await post('/api/scanner',{action:'pause'})).status,200);assert.equal(collector.state.running,false);
+  assert.equal((await post('/api/scanner',{action:'resume'},{origin:'https://attacker.example'})).status,403);
+  const foreignHost=await new Promise((resolve,reject)=>{const r=http.get(base+'/api/state',{headers:{host:'attacker.example'}},res=>{res.resume();resolve(res.statusCode);});r.on('error',reject);});
+  assert.equal(foreignHost,403);
+  assert.equal((await fetch(base+'/%2e%2e%2fpackage.json')).status,403);
+});
